@@ -12,7 +12,9 @@ COPY requirements.txt .
 
 # Install Python dependencies and Jupyter
 RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir jupyter pandas matplotlib seaborn plotly
+    pip install --no-cache-dir jupyter
+
+COPY . .
 
 # Expose Jupyter port
 EXPOSE 8888

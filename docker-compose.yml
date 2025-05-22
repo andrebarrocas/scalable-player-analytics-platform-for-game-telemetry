@@ -1,6 +1,19 @@
 version: '3.8'
 
 services:
+  localstack:
+    image: localstack/localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=kinesis,s3,dynamodb,cloudwatch
+      - DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - DEBUG=1
+    volumes:
+      - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
+
   api:
     build:
       context: .
@@ -8,26 +21,16 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_REGION=${AWS_REGION:-us-east-1}
-      - KINESIS_STREAM_NAME=game-events-stream
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - ENVIRONMENT=dev
     volumes:
       - .:/app
     depends_on:
       - localstack
-
-  localstack:
-    image: localstack/localstack:latest
-    ports:
-      - "4566:4566"
-    environment:
-      - SERVICES=kinesis,s3,dynamodb
-      - DEFAULT_REGION=us-east-1
-      - DOCKER_HOST=unix:///var/run/docker.sock
-    volumes:
-      - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
-      - "/var/run/docker.sock:/var/run/docker.sock"
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 
   jupyter:
     build:
@@ -35,11 +38,13 @@ services:
       dockerfile: Dockerfile.jupyter
     ports:
       - "8888:8888"
-    volumes:
-      - ./notebooks:/notebooks
     environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://localstack:4566
+    volumes:
+      - .:/notebooks
     depends_on:
-      - localstack 
+      - localstack
+    command: jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='' 
