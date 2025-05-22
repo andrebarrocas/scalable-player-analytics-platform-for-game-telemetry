@@ -38,6 +38,8 @@ resource "aws_kinesis_stream" "game_events" {
   name             = "game-events-stream"
   shard_count      = 2
   retention_period = 24
+  encryption_type  = "KMS"
+  kms_key_id       = aws_kms_key.kinesis.id
 
   shard_level_metrics = [
     "IncomingBytes",
@@ -55,6 +57,8 @@ resource "aws_kinesis_stream" "session_metrics" {
   name             = "session-metrics"
   shard_count      = 1
   retention_period = 24
+  encryption_type  = "KMS"
+  kms_key_id       = aws_kms_key.kinesis.id
 
   tags = {
     Environment = "production"
@@ -65,6 +69,8 @@ resource "aws_kinesis_stream" "revenue_metrics" {
   name             = "revenue-metrics"
   shard_count      = 1
   retention_period = 24
+  encryption_type  = "KMS"
+  kms_key_id       = aws_kms_key.kinesis.id
 
   tags = {
     Environment = "production"
@@ -78,6 +84,61 @@ resource "aws_s3_bucket" "raw_data" {
 
 resource "aws_s3_bucket" "processed_data" {
   bucket = "game-analytics-processed-data-${var.environment}"
+}
+
+# Add encryption configuration to S3 buckets
+resource "aws_s3_bucket_server_side_encryption_configuration" "raw_data" {
+  bucket = aws_s3_bucket.raw_data.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "processed_data" {
+  bucket = aws_s3_bucket.processed_data.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+# Add versioning to S3 buckets
+resource "aws_s3_bucket_versioning" "raw_data" {
+  bucket = aws_s3_bucket.raw_data.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_versioning" "processed_data" {
+  bucket = aws_s3_bucket.processed_data.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# Add public access block to S3 buckets
+resource "aws_s3_bucket_public_access_block" "raw_data" {
+  bucket = aws_s3_bucket.raw_data.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_public_access_block" "processed_data" {
+  bucket = aws_s3_bucket.processed_data.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }
 
 # Kinesis Firehose
@@ -207,4 +268,51 @@ output "raw_data_bucket" {
 
 output "processed_data_bucket" {
   value = aws_s3_bucket.processed_data.bucket
-} 
+}
+
+# Add encryption to Kinesis streams
+resource "aws_kinesis_stream_consumer" "game_events" {
+  name       = "game-events-consumer"
+  stream_arn = aws_kinesis_stream.game_events.arn
+
+  depends_on = [aws_kinesis_stream.game_events]
+}
+
+resource "aws_kinesis_stream_consumer" "session_metrics" {
+  name       = "session-metrics-consumer"
+  stream_arn = aws_kinesis_stream.session_metrics.arn
+
+  depends_on = [aws_kinesis_stream.session_metrics]
+}
+
+resource "aws_kinesis_stream_consumer" "revenue_metrics" {
+  name       = "revenue-metrics-consumer"
+  stream_arn = aws_kinesis_stream.revenue_metrics.arn
+
+  depends_on = [aws_kinesis_stream.revenue_metrics]
+}
+
+# Create KMS key for Kinesis encryption
+resource "aws_kms_key" "kinesis" {
+  description             = "KMS key for Kinesis streams encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Get current AWS account ID
+data "aws_caller_identity" "current" {} 
